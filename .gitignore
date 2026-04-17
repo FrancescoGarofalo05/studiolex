@@ -1,0 +1,15 @@
+# Database locale (non caricare il database vero se contiene dati sensibili)
+# *.sql  (commentato se vuoi caricare database.sql)
+
+# File di log
+logs/*.log
+!logs/.gitkeep
+
+# File di configurazione con password
+# includes/config.php  (opzionale, se vuoi tenerlo privato)
+
+# File temporanei
+*.tmp
+*.swp
+.DS_Store
+Thumbs.db

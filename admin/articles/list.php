@@ -4,6 +4,7 @@
  * File: admin/articles/list.php
  * 
  * Mostra tutti gli articoli con filtri, ricerca e azioni (modifica, elimina).
+ * Filtra per studio_id per garantire l'isolamento dei dati.
  */
 
 // Avvia la sessione
@@ -20,6 +21,9 @@ if (!isset($_SESSION['user_id'])) {
     exit;
 }
 
+// Recupera lo studio_id dalla sessione
+$studio_id = $_SESSION['studio_id'] ?? null;
+
 // Parametri di filtro e ricerca
 $search = trim($_GET['search'] ?? '');
 $category_filter = $_GET['category'] ?? '';
@@ -28,9 +32,9 @@ $page = max(1, intval($_GET['page'] ?? 1));
 $per_page = 10;
 $offset = ($page - 1) * $per_page;
 
-// Costruisce la query con filtri
-$where_clauses = [];
-$params = [];
+// Costruisce la query con filtri (INCLUDENDO OBBLIGATORIAMENTE studio_id)
+$where_clauses = ["a.studio_id = :studio_id"];
+$params = [':studio_id' => $studio_id];
 
 if (!empty($search)) {
     $where_clauses[] = "(a.title LIKE :search OR a.content LIKE :search)";
@@ -47,7 +51,7 @@ if ($status_filter !== '') {
     $params[':status'] = $status_filter;
 }
 
-$where_sql = empty($where_clauses) ? '' : 'WHERE ' . implode(' AND ', $where_clauses);
+$where_sql = 'WHERE ' . implode(' AND ', $where_clauses);
 
 // Query per contare il totale (per paginazione)
 $count_sql = "SELECT COUNT(*) as total 
@@ -81,7 +85,7 @@ foreach ($params as $key => $value) {
 $stmt->execute();
 $articles = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-// Recupera tutte le categorie per il filtro
+// Recupera tutte le categorie per il filtro (globale)
 $categories = query("SELECT * FROM categories ORDER BY name");
 
 // Messaggio di successo dopo operazioni (create/update/delete)
@@ -100,9 +104,9 @@ $page_title = 'Gestione Articoli - StudioLex Admin';
     <title><?php echo $page_title; ?></title>
     <link rel="stylesheet" href="../../assets/css/style.css">
     <style>
-        /* Stili Admin Panel (ereditati da dashboard) */
+        /* Stili Admin Panel */
         .admin-wrapper { display: flex; min-height: 100vh; background: #f7fafc; }
-        .admin-sidebar { width: 280px; background: #2C1810; color: white; display: flex; flex-direction: column; position: fixed; height: 100vh; left: 0; top: 0; }
+        .admin-sidebar { width: 280px; background: #2C1810; color: white; display: flex; flex-direction: column; position: fixed; height: 100vh; left: 0; top: 0; transition: transform 0.3s ease; z-index: 1000; overflow-y: auto; }
         .sidebar-header { padding: 1.5rem; border-bottom: 1px solid #2d3748; }
         .sidebar-logo { font-family: 'Merriweather', serif; font-size: 1.5rem; font-weight: 700; color: white; text-decoration: none; }
         .sidebar-logo span { color: #D4A373; }
@@ -118,166 +122,79 @@ $page_title = 'Gestione Articoli - StudioLex Admin';
         .nav-link:hover, .nav-link.active { background: #8B4513; color: white; }
         .nav-icon { font-size: 1.2rem; }
         .sidebar-footer { padding: 1.5rem; border-top: 1px solid #2d3748; }
-        .admin-main { flex: 1; margin-left: 280px; padding: 2rem; }
-        .admin-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem; }
+        .admin-main { flex: 1; margin-left: 280px; padding: 2rem; transition: margin-left 0.3s ease; }
+        .admin-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem; flex-wrap: wrap; gap: 1rem; }
         .page-title { font-family: 'Merriweather', serif; font-size: 2rem; color: #1A1A1A; }
         
+        /* Pulsante Menu Mobile */
+        .mobile-menu-toggle { display: none; position: fixed; top: 15px; left: 15px; z-index: 1001; background: #8B4513; color: white; border: none; width: 45px; height: 45px; border-radius: 8px; font-size: 1.5rem; cursor: pointer; box-shadow: 0 4px 12px rgba(0,0,0,0.2); align-items: center; justify-content: center; }
+        .mobile-menu-toggle:hover { background: #2C1810; }
+        .sidebar-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 999; opacity: 0; transition: opacity 0.3s ease; }
+        .sidebar-overlay.active { opacity: 1; }
+        
         /* Filtri */
-        .filters-container {
-            background: white;
-            border-radius: 12px;
-            padding: 1.5rem;
-            margin-bottom: 2rem;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.04);
-        }
-        
-        .filters-form {
-            display: flex;
-            gap: 1rem;
-            flex-wrap: wrap;
-            align-items: flex-end;
-        }
-        
-        .filter-group {
-            flex: 1;
-            min-width: 200px;
-        }
-        
-        .filter-label {
-            display: block;
-            font-size: 0.85rem;
-            font-weight: 600;
-            margin-bottom: 0.5rem;
-            color: #4a5568;
-        }
-        
-        .filter-input, .filter-select {
-            width: 100%;
-            padding: 0.5rem 0.75rem;
-            border: 2px solid #e2e8f0;
-            border-radius: 8px;
-            font-size: 0.95rem;
-        }
-        
-        .filter-input:focus, .filter-select:focus {
-            outline: none;
-            border-color: #8B4513;
-        }
-        
-        .filter-actions {
-            display: flex;
-            gap: 0.5rem;
-        }
+        .filters-container { background: white; border-radius: 12px; padding: 1.5rem; margin-bottom: 2rem; box-shadow: 0 2px 8px rgba(0,0,0,0.04); }
+        .filters-form { display: flex; gap: 1rem; flex-wrap: wrap; align-items: flex-end; }
+        .filter-group { flex: 1; min-width: 200px; }
+        .filter-label { display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 0.5rem; color: #4a5568; }
+        .filter-input, .filter-select { width: 100%; padding: 0.5rem 0.75rem; border: 2px solid #e2e8f0; border-radius: 8px; font-size: 0.95rem; }
+        .filter-input:focus, .filter-select:focus { outline: none; border-color: #8B4513; }
+        .filter-actions { display: flex; gap: 0.5rem; }
         
         /* Tabella */
-        .table-container {
-            background: white;
-            border-radius: 12px;
-            padding: 1.5rem;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.04);
-        }
-        
-        .admin-table {
-            width: 100%;
-            border-collapse: collapse;
-        }
-        
-        .admin-table th {
-            text-align: left;
-            padding: 0.75rem;
-            border-bottom: 2px solid #e2e8f0;
-            color: #4a5568;
-            font-weight: 600;
-            font-size: 0.85rem;
-            background: #f7fafc;
-        }
-        
-        .admin-table td {
-            padding: 0.75rem;
-            border-bottom: 1px solid #e2e8f0;
-            color: #1A1A1A;
-        }
-        
-        .admin-table tr:last-child td {
-            border-bottom: none;
-        }
-        
-        .admin-table tr:hover {
-            background: #f7fafc;
-        }
-        
-        .status-badge {
-            display: inline-block;
-            padding: 0.25rem 0.75rem;
-            border-radius: 20px;
-            font-size: 0.75rem;
-            font-weight: 600;
-        }
-        
+        .table-container { background: white; border-radius: 12px; padding: 1.5rem; box-shadow: 0 2px 8px rgba(0,0,0,0.04); overflow-x: auto; }
+        .admin-table { width: 100%; border-collapse: collapse; min-width: 700px; }
+        .admin-table th { text-align: left; padding: 0.75rem; border-bottom: 2px solid #e2e8f0; color: #4a5568; font-weight: 600; font-size: 0.85rem; background: #f7fafc; }
+        .admin-table td { padding: 0.75rem; border-bottom: 1px solid #e2e8f0; color: #1A1A1A; }
+        .admin-table tr:last-child td { border-bottom: none; }
+        .admin-table tr:hover { background: #f7fafc; }
+        .status-badge { display: inline-block; padding: 0.25rem 0.75rem; border-radius: 20px; font-size: 0.75rem; font-weight: 600; white-space: nowrap; }
         .status-published { background: #c6f6d5; color: #22543d; }
         .status-draft { background: #fed7d7; color: #742a2a; }
-        
-        .action-links {
-            display: flex;
-            gap: 0.5rem;
-        }
-        
-        .btn-icon {
-            padding: 0.25rem 0.5rem;
-            border-radius: 6px;
-            text-decoration: none;
-            font-size: 0.8rem;
-            transition: all 0.3s ease;
-        }
-        
+        .action-links { display: flex; gap: 0.5rem; }
+        .btn-icon { padding: 0.25rem 0.5rem; border-radius: 6px; text-decoration: none; font-size: 0.8rem; transition: all 0.3s ease; }
         .btn-edit { background: #8B4513; color: white; }
         .btn-edit:hover { background: #2C1810; }
         .btn-delete { background: #e53e3e; color: white; }
         .btn-delete:hover { background: #c53030; }
-        
-        .alert {
-            padding: 1rem 1.5rem;
-            border-radius: 8px;
-            margin-bottom: 1.5rem;
-        }
-        
+        .alert { padding: 1rem 1.5rem; border-radius: 8px; margin-bottom: 1.5rem; }
         .alert-success { background: #c6f6d5; border: 1px solid #68d391; color: #22543d; }
         .alert-error { background: #fed7d7; border: 1px solid #f56565; color: #742a2a; }
         
         /* Paginazione */
-        .pagination {
-            display: flex;
-            justify-content: center;
-            gap: 0.5rem;
-            margin-top: 2rem;
-        }
+        .pagination { display: flex; justify-content: center; gap: 0.5rem; margin-top: 2rem; flex-wrap: wrap; }
+        .page-link { padding: 0.5rem 1rem; border: 1px solid #e2e8f0; border-radius: 6px; text-decoration: none; color: #4a5568; transition: all 0.3s ease; }
+        .page-link:hover, .page-link.active { background: #8B4513; color: white; border-color: #8B4513; }
+        .empty-state { text-align: center; padding: 3rem; color: #4a5568; }
         
-        .page-link {
-            padding: 0.5rem 1rem;
-            border: 1px solid #e2e8f0;
-            border-radius: 6px;
-            text-decoration: none;
-            color: #4a5568;
-            transition: all 0.3s ease;
-        }
-        
-        .page-link:hover, .page-link.active {
-            background: #8B4513;
-            color: white;
-            border-color: #8B4513;
-        }
-        
-        .empty-state {
-            text-align: center;
-            padding: 3rem;
-            color: #4a5568;
+        /* Responsive */
+        @media (max-width: 768px) {
+            .mobile-menu-toggle { display: flex; }
+            .sidebar-overlay { display: block; pointer-events: none; }
+            .sidebar-overlay.active { pointer-events: auto; }
+            .admin-sidebar { transform: translateX(-100%); position: fixed; top: 0; left: 0; width: 260px; height: 100vh; box-shadow: 4px 0 20px rgba(0,0,0,0.3); }
+            .admin-sidebar.mobile-open { transform: translateX(0); }
+            .admin-main { margin-left: 0 !important; padding: 15px !important; padding-top: 70px !important; width: 100% !important; }
+            .admin-header { flex-direction: column; align-items: flex-start; }
+            .page-title { font-size: 1.5rem; }
+            .header-actions { width: 100%; }
+            .header-actions .btn { width: 100%; text-align: center; }
+            .filters-form { flex-direction: column; }
+            .filter-group { width: 100%; }
+            .filter-actions { width: 100%; }
+            .filter-actions .btn { flex: 1; text-align: center; }
+            .action-links { flex-direction: column; }
         }
     </style>
 </head>
 <body>
+    <!-- Pulsante Menu Mobile -->
+    <button class="mobile-menu-toggle" id="mobileMenuToggle" aria-label="Menu">☰</button>
+    <div class="sidebar-overlay" id="sidebarOverlay"></div>
+    
     <div class="admin-wrapper">
-        <!-- Sidebar (identica alla dashboard) -->
-        <aside class="admin-sidebar">
+        <!-- Sidebar -->
+        <aside class="admin-sidebar" id="adminSidebar">
             <div class="sidebar-header">
                 <a href="../dashboard.php" class="sidebar-logo">
                     Studio<span>Lex</span>
@@ -293,12 +210,14 @@ $page_title = 'Gestione Articoli - StudioLex Admin';
                     <ul class="nav-menu">
                         <li class="nav-item">
                             <a href="../dashboard.php" class="nav-link">
-                                <span class="nav-icon">📊</span> Dashboard
+                                <span class="nav-icon">📊</span>
+                                <span>Dashboard</span>
                             </a>
                         </li>
                         <li class="nav-item">
                             <a href="list.php" class="nav-link active">
-                                <span class="nav-icon">📝</span> Articoli
+                                <span class="nav-icon">📝</span>
+                                <span>Articoli</span>
                             </a>
                         </li>
                     </ul>
@@ -306,10 +225,12 @@ $page_title = 'Gestione Articoli - StudioLex Admin';
             </nav>
             <div class="sidebar-footer">
                 <a href="../../index.php" class="nav-link" target="_blank">
-                    <span class="nav-icon">🌐</span> Vai al sito
+                    <span class="nav-icon">🌐</span>
+                    <span>Vai al sito</span>
                 </a>
                 <a href="../logout.php" class="nav-link" style="color: #f56565;">
-                    <span class="nav-icon">🚪</span> Logout
+                    <span class="nav-icon">🚪</span>
+                    <span>Logout</span>
                 </a>
             </div>
         </aside>
@@ -439,5 +360,46 @@ $page_title = 'Gestione Articoli - StudioLex Admin';
             </div>
         </main>
     </div>
+    
+    <!-- Script per Menu Mobile -->
+    <script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const toggle = document.getElementById('mobileMenuToggle');
+        const sidebar = document.getElementById('adminSidebar');
+        const overlay = document.getElementById('sidebarOverlay');
+        
+        if (toggle && sidebar && overlay) {
+            toggle.addEventListener('click', function() {
+                sidebar.classList.toggle('mobile-open');
+                overlay.classList.toggle('active');
+                this.textContent = sidebar.classList.contains('mobile-open') ? '✕' : '☰';
+            });
+            
+            overlay.addEventListener('click', function() {
+                sidebar.classList.remove('mobile-open');
+                overlay.classList.remove('active');
+                toggle.textContent = '☰';
+            });
+            
+            sidebar.querySelectorAll('.nav-link').forEach(link => {
+                link.addEventListener('click', function() {
+                    if (window.innerWidth <= 768) {
+                        sidebar.classList.remove('mobile-open');
+                        overlay.classList.remove('active');
+                        toggle.textContent = '☰';
+                    }
+                });
+            });
+            
+            window.addEventListener('resize', function() {
+                if (window.innerWidth > 768) {
+                    sidebar.classList.remove('mobile-open');
+                    overlay.classList.remove('active');
+                    toggle.textContent = '☰';
+                }
+            });
+        }
+    });
+    </script>
 </body>
 </html>

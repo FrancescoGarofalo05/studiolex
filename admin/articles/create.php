@@ -4,6 +4,7 @@
  * File: admin/articles/create.php
  * 
  * Form per la creazione di un nuovo articolo.
+ * Salva l'articolo associandolo allo studio_id dell'utente loggato.
  */
 
 // Avvia la sessione
@@ -19,6 +20,9 @@ if (!isset($_SESSION['user_id'])) {
     header('Location: ../login.php');
     exit;
 }
+
+// Recupera lo studio_id dalla sessione
+$studio_id = $_SESSION['studio_id'] ?? null;
 
 // Variabili per il form
 $title = $excerpt = $content = '';
@@ -92,9 +96,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $excerpt = substr(strip_tags($content), 0, 150) . '...';
         }
         
-        // Inserisci nel database
-        $insert_sql = "INSERT INTO articles (title, slug, excerpt, content, category_id, user_id, published, created_at) 
-                       VALUES (:title, :slug, :excerpt, :content, :category_id, :user_id, :published, NOW())";
+        // Inserisci nel database (AGGIUNTO studio_id)
+        $insert_sql = "INSERT INTO articles (title, slug, excerpt, content, category_id, user_id, studio_id, published, created_at) 
+                       VALUES (:title, :slug, :excerpt, :content, :category_id, :user_id, :studio_id, :published, NOW())";
         
         try {
             execute($insert_sql, [
@@ -104,6 +108,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 ':content' => $content,
                 ':category_id' => $category_id ?: null,
                 ':user_id' => $_SESSION['user_id'],
+                ':studio_id' => $studio_id,
                 ':published' => $published
             ]);
             
@@ -134,7 +139,7 @@ $page_title = 'Nuovo Articolo - StudioLex Admin';
     <style>
         /* Stili Admin Panel */
         .admin-wrapper { display: flex; min-height: 100vh; background: #f7fafc; }
-        .admin-sidebar { width: 280px; background: #2C1810; color: white; display: flex; flex-direction: column; position: fixed; height: 100vh; left: 0; top: 0; }
+        .admin-sidebar { width: 280px; background: #2C1810; color: white; display: flex; flex-direction: column; position: fixed; height: 100vh; left: 0; top: 0; transition: transform 0.3s ease; z-index: 1000; overflow-y: auto; }
         .sidebar-header { padding: 1.5rem; border-bottom: 1px solid #2d3748; }
         .sidebar-logo { font-family: 'Merriweather', serif; font-size: 1.5rem; font-weight: 700; color: white; text-decoration: none; }
         .sidebar-logo span { color: #D4A373; }
@@ -150,120 +155,55 @@ $page_title = 'Nuovo Articolo - StudioLex Admin';
         .nav-link:hover, .nav-link.active { background: #8B4513; color: white; }
         .nav-icon { font-size: 1.2rem; }
         .sidebar-footer { padding: 1.5rem; border-top: 1px solid #2d3748; }
-        .admin-main { flex: 1; margin-left: 280px; padding: 2rem; }
-        .admin-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem; }
+        .admin-main { flex: 1; margin-left: 280px; padding: 2rem; transition: margin-left 0.3s ease; }
+        .admin-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem; flex-wrap: wrap; gap: 1rem; }
         .page-title { font-family: 'Merriweather', serif; font-size: 2rem; color: #1A1A1A; }
         
+        /* Pulsante Menu Mobile */
+        .mobile-menu-toggle { display: none; position: fixed; top: 15px; left: 15px; z-index: 1001; background: #8B4513; color: white; border: none; width: 45px; height: 45px; border-radius: 8px; font-size: 1.5rem; cursor: pointer; box-shadow: 0 4px 12px rgba(0,0,0,0.2); align-items: center; justify-content: center; }
+        .mobile-menu-toggle:hover { background: #2C1810; }
+        .sidebar-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 999; opacity: 0; transition: opacity 0.3s ease; }
+        .sidebar-overlay.active { opacity: 1; }
+        
         /* Form */
-        .form-container {
-            background: white;
-            border-radius: 12px;
-            padding: 2rem;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.04);
-            max-width: 900px;
-        }
-        
-        .form-group {
-            margin-bottom: 1.5rem;
-        }
-        
-        .form-label {
-            display: block;
-            font-weight: 600;
-            margin-bottom: 0.5rem;
-            color: #1A1A1A;
-        }
-        
-        .form-input, .form-select, .form-textarea {
-            width: 100%;
-            padding: 0.75rem 1rem;
-            border: 2px solid #e2e8f0;
-            border-radius: 8px;
-            font-size: 1rem;
-            font-family: 'Inter', sans-serif;
-            transition: all 0.3s ease;
-        }
-        
-        .form-input:focus, .form-select:focus, .form-textarea:focus {
-            outline: none;
-            border-color: #8B4513;
-            box-shadow: 0 0 0 3px rgba(139, 69, 19, 0.1);
-        }
-        
-        .form-textarea {
-            resize: vertical;
-            min-height: 300px;
-        }
-        
-        .has-error .form-input, .has-error .form-select, .has-error .form-textarea {
-            border-color: #e53e3e;
-        }
-        
-        .form-error {
-            color: #e53e3e;
-            font-size: 0.85rem;
-            margin-top: 0.25rem;
-            display: block;
-        }
-        
-        .form-hint {
-            color: #718096;
-            font-size: 0.85rem;
-            margin-top: 0.25rem;
-        }
-        
-        .form-row {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 1.5rem;
-        }
-        
-        .form-checkbox {
-            display: flex;
-            align-items: center;
-            gap: 0.75rem;
-        }
-        
-        .form-checkbox input {
-            width: 18px;
-            height: 18px;
-            cursor: pointer;
-        }
-        
-        .form-checkbox label {
-            cursor: pointer;
-            font-weight: 500;
-        }
-        
-        .form-actions {
-            display: flex;
-            gap: 1rem;
-            margin-top: 2rem;
-            padding-top: 1.5rem;
-            border-top: 1px solid #e2e8f0;
-        }
-        
-        .alert-error {
-            background: #fed7d7;
-            border: 1px solid #f56565;
-            color: #742a2a;
-            padding: 1rem;
-            border-radius: 8px;
-            margin-bottom: 1.5rem;
-        }
+        .form-container { background: white; border-radius: 12px; padding: 2rem; box-shadow: 0 2px 8px rgba(0,0,0,0.04); max-width: 900px; }
+        .form-group { margin-bottom: 1.5rem; }
+        .form-label { display: block; font-weight: 600; margin-bottom: 0.5rem; color: #1A1A1A; }
+        .form-input, .form-select, .form-textarea { width: 100%; padding: 0.75rem 1rem; border: 2px solid #e2e8f0; border-radius: 8px; font-size: 1rem; font-family: 'Inter', sans-serif; transition: all 0.3s ease; }
+        .form-input:focus, .form-select:focus, .form-textarea:focus { outline: none; border-color: #8B4513; box-shadow: 0 0 0 3px rgba(139, 69, 19, 0.1); }
+        .form-textarea { resize: vertical; min-height: 300px; }
+        .has-error .form-input, .has-error .form-select, .has-error .form-textarea { border-color: #e53e3e; }
+        .form-error { color: #e53e3e; font-size: 0.85rem; margin-top: 0.25rem; display: block; }
+        .form-hint { color: #718096; font-size: 0.85rem; margin-top: 0.25rem; }
+        .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; }
+        .form-checkbox { display: flex; align-items: center; gap: 0.75rem; }
+        .form-checkbox input { width: 18px; height: 18px; cursor: pointer; }
+        .form-checkbox label { cursor: pointer; font-weight: 500; }
+        .form-actions { display: flex; gap: 1rem; margin-top: 2rem; padding-top: 1.5rem; border-top: 1px solid #e2e8f0; }
+        .alert-error { background: #fed7d7; border: 1px solid #f56565; color: #742a2a; padding: 1rem; border-radius: 8px; margin-bottom: 1.5rem; }
         
         /* Responsive */
         @media (max-width: 768px) {
-            .admin-sidebar { display: none; }
-            .admin-main { margin-left: 0; }
+            .mobile-menu-toggle { display: flex; }
+            .sidebar-overlay { display: block; pointer-events: none; }
+            .sidebar-overlay.active { pointer-events: auto; }
+            .admin-sidebar { transform: translateX(-100%); position: fixed; top: 0; left: 0; width: 260px; height: 100vh; box-shadow: 4px 0 20px rgba(0,0,0,0.3); }
+            .admin-sidebar.mobile-open { transform: translateX(0); }
+            .admin-main { margin-left: 0 !important; padding: 15px !important; padding-top: 70px !important; width: 100% !important; }
+            .admin-header { flex-direction: column; align-items: flex-start; }
+            .page-title { font-size: 1.5rem; }
             .form-row { grid-template-columns: 1fr; }
         }
     </style>
 </head>
 <body>
+    <!-- Pulsante Menu Mobile -->
+    <button class="mobile-menu-toggle" id="mobileMenuToggle" aria-label="Menu">☰</button>
+    <div class="sidebar-overlay" id="sidebarOverlay"></div>
+    
     <div class="admin-wrapper">
         <!-- Sidebar -->
-        <aside class="admin-sidebar">
+        <aside class="admin-sidebar" id="adminSidebar">
             <div class="sidebar-header">
                 <a href="../dashboard.php" class="sidebar-logo">
                     Studio<span>Lex</span>
@@ -279,12 +219,14 @@ $page_title = 'Nuovo Articolo - StudioLex Admin';
                     <ul class="nav-menu">
                         <li class="nav-item">
                             <a href="../dashboard.php" class="nav-link">
-                                <span class="nav-icon">📊</span> Dashboard
+                                <span class="nav-icon">📊</span>
+                                <span>Dashboard</span>
                             </a>
                         </li>
                         <li class="nav-item">
                             <a href="list.php" class="nav-link active">
-                                <span class="nav-icon">📝</span> Articoli
+                                <span class="nav-icon">📝</span>
+                                <span>Articoli</span>
                             </a>
                         </li>
                     </ul>
@@ -292,10 +234,12 @@ $page_title = 'Nuovo Articolo - StudioLex Admin';
             </nav>
             <div class="sidebar-footer">
                 <a href="../../index.php" class="nav-link" target="_blank">
-                    <span class="nav-icon">🌐</span> Vai al sito
+                    <span class="nav-icon">🌐</span>
+                    <span>Vai al sito</span>
                 </a>
                 <a href="../logout.php" class="nav-link" style="color: #f56565;">
-                    <span class="nav-icon">🚪</span> Logout
+                    <span class="nav-icon">🚪</span>
+                    <span>Logout</span>
                 </a>
             </div>
         </aside>
@@ -316,16 +260,8 @@ $page_title = 'Nuovo Articolo - StudioLex Admin';
                     <!-- Titolo -->
                     <div class="form-group <?php echo isset($errors['title']) ? 'has-error' : ''; ?>">
                         <label for="title" class="form-label">Titolo *</label>
-                        <input type="text" 
-                               id="title" 
-                               name="title" 
-                               class="form-input" 
-                               value="<?php echo htmlspecialchars($title); ?>"
-                               placeholder="es. La riforma del processo civile 2026"
-                               required>
-                        <?php if (isset($errors['title'])): ?>
-                            <span class="form-error"><?php echo $errors['title']; ?></span>
-                        <?php endif; ?>
+                        <input type="text" id="title" name="title" class="form-input" value="<?php echo htmlspecialchars($title); ?>" placeholder="es. La riforma del processo civile 2026" required>
+                        <?php if (isset($errors['title'])): ?><span class="form-error"><?php echo $errors['title']; ?></span><?php endif; ?>
                         <p class="form-hint">Il titolo dell'articolo. Verrà usato per generare l'URL.</p>
                     </div>
                     
@@ -341,9 +277,7 @@ $page_title = 'Nuovo Articolo - StudioLex Admin';
                                     </option>
                                 <?php endforeach; ?>
                             </select>
-                            <?php if (isset($errors['category_id'])): ?>
-                                <span class="form-error"><?php echo $errors['category_id']; ?></span>
-                            <?php endif; ?>
+                            <?php if (isset($errors['category_id'])): ?><span class="form-error"><?php echo $errors['category_id']; ?></span><?php endif; ?>
                         </div>
                         
                         <!-- Stato Pubblicazione -->
@@ -360,28 +294,16 @@ $page_title = 'Nuovo Articolo - StudioLex Admin';
                     <!-- Estratto -->
                     <div class="form-group <?php echo isset($errors['excerpt']) ? 'has-error' : ''; ?>">
                         <label for="excerpt" class="form-label">Estratto</label>
-                        <textarea id="excerpt" 
-                                  name="excerpt" 
-                                  class="form-textarea" 
-                                  rows="3"
-                                  placeholder="Un breve riassunto dell'articolo (opzionale)"><?php echo htmlspecialchars($excerpt); ?></textarea>
-                        <?php if (isset($errors['excerpt'])): ?>
-                            <span class="form-error"><?php echo $errors['excerpt']; ?></span>
-                        <?php endif; ?>
+                        <textarea id="excerpt" name="excerpt" class="form-textarea" rows="3" placeholder="Un breve riassunto dell'articolo (opzionale)"><?php echo htmlspecialchars($excerpt); ?></textarea>
+                        <?php if (isset($errors['excerpt'])): ?><span class="form-error"><?php echo $errors['excerpt']; ?></span><?php endif; ?>
                         <p class="form-hint">Se lasciato vuoto, verrà generato automaticamente dal contenuto.</p>
                     </div>
                     
                     <!-- Contenuto -->
                     <div class="form-group <?php echo isset($errors['content']) ? 'has-error' : ''; ?>">
                         <label for="content" class="form-label">Contenuto *</label>
-                        <textarea id="content" 
-                                  name="content" 
-                                  class="form-textarea" 
-                                  placeholder="Scrivi il contenuto dell'articolo... (puoi usare HTML per formattazione)"
-                                  required><?php echo htmlspecialchars($content); ?></textarea>
-                        <?php if (isset($errors['content'])): ?>
-                            <span class="form-error"><?php echo $errors['content']; ?></span>
-                        <?php endif; ?>
+                        <textarea id="content" name="content" class="form-textarea" placeholder="Scrivi il contenuto dell'articolo... (puoi usare HTML per formattazione)" required><?php echo htmlspecialchars($content); ?></textarea>
+                        <?php if (isset($errors['content'])): ?><span class="form-error"><?php echo $errors['content']; ?></span><?php endif; ?>
                         <p class="form-hint">Puoi utilizzare tag HTML come &lt;p&gt;, &lt;h2&gt;, &lt;strong&gt;, &lt;ul&gt;, ecc.</p>
                     </div>
                     
@@ -394,5 +316,46 @@ $page_title = 'Nuovo Articolo - StudioLex Admin';
             </div>
         </main>
     </div>
+    
+    <!-- Script per Menu Mobile -->
+    <script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const toggle = document.getElementById('mobileMenuToggle');
+        const sidebar = document.getElementById('adminSidebar');
+        const overlay = document.getElementById('sidebarOverlay');
+        
+        if (toggle && sidebar && overlay) {
+            toggle.addEventListener('click', function() {
+                sidebar.classList.toggle('mobile-open');
+                overlay.classList.toggle('active');
+                this.textContent = sidebar.classList.contains('mobile-open') ? '✕' : '☰';
+            });
+            
+            overlay.addEventListener('click', function() {
+                sidebar.classList.remove('mobile-open');
+                overlay.classList.remove('active');
+                toggle.textContent = '☰';
+            });
+            
+            sidebar.querySelectorAll('.nav-link').forEach(link => {
+                link.addEventListener('click', function() {
+                    if (window.innerWidth <= 768) {
+                        sidebar.classList.remove('mobile-open');
+                        overlay.classList.remove('active');
+                        toggle.textContent = '☰';
+                    }
+                });
+            });
+            
+            window.addEventListener('resize', function() {
+                if (window.innerWidth > 768) {
+                    sidebar.classList.remove('mobile-open');
+                    overlay.classList.remove('active');
+                    toggle.textContent = '☰';
+                }
+            });
+        }
+    });
+    </script>
 </body>
 </html>

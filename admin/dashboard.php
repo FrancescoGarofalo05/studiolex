@@ -4,6 +4,7 @@
  * File: admin/dashboard.php
  * 
  * Pannello di controllo principale dopo il login.
+ * Mostra statistiche filtrate per studio e la Passkey (solo per Admin).
  */
 
 // Avvia la sessione
@@ -20,50 +21,64 @@ if (!isset($_SESSION['user_id'])) {
     exit;
 }
 
-// Recupera statistiche per la dashboard
+// Recupera lo studio_id dalla sessione
+$studio_id = $_SESSION['studio_id'] ?? null;
+
+// Se l'utente è admin, recupera la Passkey del suo studio
+$studio_passkey = '';
+if ($_SESSION['role'] === 'admin' && $studio_id) {
+    $studio = querySingle("SELECT passkey, name FROM studios WHERE id = :sid", [':sid' => $studio_id]);
+    if ($studio) {
+        $studio_passkey = $studio['passkey'];
+        $studio_name = $studio['name'];
+    }
+}
+
+// Recupera statistiche per la dashboard (FILTRATE PER studio_id)
 $stats = [];
 
 // Conteggio articoli totali
-$sql = "SELECT COUNT(*) as total FROM articles";
-$result = querySingle($sql);
+$sql = "SELECT COUNT(*) as total FROM articles WHERE studio_id = :sid";
+$result = querySingle($sql, [':sid' => $studio_id]);
 $stats['total_articles'] = $result['total'];
 
 // Conteggio articoli pubblicati
-$sql = "SELECT COUNT(*) as total FROM articles WHERE published = 1";
-$result = querySingle($sql);
+$sql = "SELECT COUNT(*) as total FROM articles WHERE published = 1 AND studio_id = :sid";
+$result = querySingle($sql, [':sid' => $studio_id]);
 $stats['published_articles'] = $result['total'];
 
 // Conteggio articoli in bozza
-$sql = "SELECT COUNT(*) as total FROM articles WHERE published = 0";
-$result = querySingle($sql);
+$sql = "SELECT COUNT(*) as total FROM articles WHERE published = 0 AND studio_id = :sid";
+$result = querySingle($sql, [':sid' => $studio_id]);
 $stats['draft_articles'] = $result['total'];
 
-// Conteggio categorie
+// Conteggio categorie (globale, non filtrato per studio)
 $sql = "SELECT COUNT(*) as total FROM categories";
 $result = querySingle($sql);
 $stats['total_categories'] = $result['total'];
 
 // Visualizzazioni totali
-$sql = "SELECT SUM(views) as total FROM articles";
-$result = querySingle($sql);
+$sql = "SELECT SUM(views) as total FROM articles WHERE studio_id = :sid";
+$result = querySingle($sql, [':sid' => $studio_id]);
 $stats['total_views'] = $result['total'] ?? 0;
 
-// Ultimi 5 articoli
+// Ultimi 5 articoli (FILTRATI PER studio_id)
 $sql = "SELECT a.id, a.title, a.slug, a.published, a.views, a.created_at,
                c.name as category_name
         FROM articles a
         LEFT JOIN categories c ON a.category_id = c.id
+        WHERE a.studio_id = :sid
         ORDER BY a.created_at DESC
         LIMIT 5";
-$recent_articles = query($sql);
+$recent_articles = query($sql, [':sid' => $studio_id]);
 
-// Articoli più visti
+// Articoli più visti (FILTRATI PER studio_id)
 $sql = "SELECT id, title, slug, views 
         FROM articles 
-        WHERE published = 1 
+        WHERE published = 1 AND studio_id = :sid
         ORDER BY views DESC 
         LIMIT 5";
-$popular_articles = query($sql);
+$popular_articles = query($sql, [':sid' => $studio_id]);
 
 // Imposta titolo pagina
 $page_title = 'Dashboard - StudioLex Admin';
@@ -94,6 +109,9 @@ $page_title = 'Dashboard - StudioLex Admin';
             height: 100vh;
             left: 0;
             top: 0;
+            transition: transform 0.3s ease;
+            z-index: 1000;
+            overflow-y: auto;
         }
         
         .sidebar-header {
@@ -184,6 +202,7 @@ $page_title = 'Dashboard - StudioLex Admin';
             flex: 1;
             margin-left: 280px;
             padding: 2rem;
+            transition: margin-left 0.3s ease;
         }
         
         .admin-header {
@@ -191,6 +210,8 @@ $page_title = 'Dashboard - StudioLex Admin';
             justify-content: space-between;
             align-items: center;
             margin-bottom: 2rem;
+            flex-wrap: wrap;
+            gap: 1rem;
         }
         
         .page-title {
@@ -202,6 +223,41 @@ $page_title = 'Dashboard - StudioLex Admin';
         .header-actions {
             display: flex;
             gap: 1rem;
+        }
+        
+        /* Passkey Box (solo Admin) */
+        .passkey-box {
+            background: linear-gradient(135deg, var(--color-primary) 0%, #2b6cb0 100%);
+            color: white;
+            padding: 1.5rem;
+            border-radius: 12px;
+            margin-bottom: 2rem;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+        
+        .passkey-box h3 {
+            margin-bottom: 0.5rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        
+        .passkey-display {
+            background: rgba(255,255,255,0.15);
+            padding: 1rem 1.5rem;
+            border-radius: 8px;
+            font-family: monospace;
+            font-size: 1.8rem;
+            letter-spacing: 3px;
+            text-align: center;
+            backdrop-filter: blur(4px);
+            border: 1px dashed rgba(255,255,255,0.3);
+            margin: 1rem 0;
+        }
+        
+        .passkey-note {
+            font-size: 0.9rem;
+            opacity: 0.9;
         }
         
         /* Stats Grid */
@@ -253,6 +309,7 @@ $page_title = 'Dashboard - StudioLex Admin';
             padding: 1.5rem;
             box-shadow: 0 2px 8px rgba(0,0,0,0.04);
             margin-bottom: 2rem;
+            overflow-x: auto;
         }
         
         .table-header {
@@ -260,6 +317,8 @@ $page_title = 'Dashboard - StudioLex Admin';
             justify-content: space-between;
             align-items: center;
             margin-bottom: 1.5rem;
+            flex-wrap: wrap;
+            gap: 1rem;
         }
         
         .table-title {
@@ -271,6 +330,7 @@ $page_title = 'Dashboard - StudioLex Admin';
         .admin-table {
             width: 100%;
             border-collapse: collapse;
+            min-width: 600px;
         }
         
         .admin-table th {
@@ -298,6 +358,7 @@ $page_title = 'Dashboard - StudioLex Admin';
             border-radius: 20px;
             font-size: 0.75rem;
             font-weight: 600;
+            white-space: nowrap;
         }
         
         .status-published {
@@ -332,6 +393,7 @@ $page_title = 'Dashboard - StudioLex Admin';
             border-radius: 6px;
             text-decoration: none;
             transition: var(--transition);
+            white-space: nowrap;
         }
         
         .btn-outline-sm:hover {
@@ -357,6 +419,48 @@ $page_title = 'Dashboard - StudioLex Admin';
             margin-bottom: 0.5rem;
         }
         
+        /* Pulsante Menu Mobile */
+        .mobile-menu-toggle {
+            display: none;
+            position: fixed;
+            top: 15px;
+            left: 15px;
+            z-index: 1001;
+            background: var(--color-primary);
+            color: white;
+            border: none;
+            width: 45px;
+            height: 45px;
+            border-radius: 8px;
+            font-size: 1.5rem;
+            cursor: pointer;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .mobile-menu-toggle:hover {
+            background: var(--color-dark);
+        }
+        
+        /* Overlay */
+        .sidebar-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            z-index: 999;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+        
+        .sidebar-overlay.active {
+            opacity: 1;
+        }
+        
         /* Responsive */
         @media (max-width: 1024px) {
             .stats-grid {
@@ -365,24 +469,133 @@ $page_title = 'Dashboard - StudioLex Admin';
         }
         
         @media (max-width: 768px) {
+            .mobile-menu-toggle {
+                display: flex;
+            }
+            
+            .sidebar-overlay {
+                display: block;
+                pointer-events: none;
+            }
+            
+            .sidebar-overlay.active {
+                pointer-events: auto;
+            }
+            
             .admin-sidebar {
-                display: none;
+                transform: translateX(-100%);
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 260px;
+                height: 100vh;
+                box-shadow: 4px 0 20px rgba(0,0,0,0.3);
+            }
+            
+            .admin-sidebar.mobile-open {
+                transform: translateX(0);
             }
             
             .admin-main {
-                margin-left: 0;
+                margin-left: 0 !important;
+                padding: 15px !important;
+                padding-top: 70px !important;
+                width: 100% !important;
+            }
+            
+            .admin-header {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+            
+            .page-title {
+                font-size: 1.5rem;
+            }
+            
+            .header-actions {
+                width: 100%;
+            }
+            
+            .header-actions .btn {
+                width: 100%;
+                text-align: center;
+            }
+            
+            .passkey-display {
+                font-size: 1.4rem;
+                letter-spacing: 2px;
+                padding: 0.75rem;
             }
             
             .stats-grid {
                 grid-template-columns: 1fr;
+                gap: 12px;
+            }
+            
+            .stat-card {
+                padding: 15px;
+            }
+            
+            .stat-value {
+                font-size: 1.5rem;
+            }
+            
+            .table-container {
+                padding: 15px;
+            }
+            
+            .table-header {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+            
+            .btn-outline-sm {
+                width: 100%;
+                text-align: center;
+            }
+            
+            .welcome-message {
+                padding: 15px;
+            }
+            
+            .welcome-message h2 {
+                font-size: 1.2rem;
+            }
+            
+            .action-links {
+                flex-direction: column;
+            }
+        }
+        
+        @media (max-width: 480px) {
+            .stat-icon {
+                width: 40px;
+                height: 40px;
+                font-size: 1.2rem;
+            }
+            
+            .stat-value {
+                font-size: 1.3rem;
+            }
+            
+            .page-title {
+                font-size: 1.3rem;
             }
         }
     </style>
 </head>
 <body>
+    <!-- Pulsante Menu Mobile -->
+    <button class="mobile-menu-toggle" id="mobileMenuToggle" aria-label="Menu">
+        ☰
+    </button>
+    
+    <!-- Overlay -->
+    <div class="sidebar-overlay" id="sidebarOverlay"></div>
+    
     <div class="admin-wrapper">
         <!-- Sidebar -->
-        <aside class="admin-sidebar">
+        <aside class="admin-sidebar" id="adminSidebar">
             <div class="sidebar-header">
                 <a href="dashboard.php" class="sidebar-logo">
                     Studio<span>Lex</span>
@@ -401,13 +614,13 @@ $page_title = 'Dashboard - StudioLex Admin';
                         <li class="nav-item">
                             <a href="dashboard.php" class="nav-link active">
                                 <span class="nav-icon">📊</span>
-                                Dashboard
+                                <span>Dashboard</span>
                             </a>
                         </li>
                         <li class="nav-item">
                             <a href="articles/list.php" class="nav-link">
                                 <span class="nav-icon">📝</span>
-                                Articoli
+                                <span>Articoli</span>
                             </a>
                         </li>
                     </ul>
@@ -417,11 +630,11 @@ $page_title = 'Dashboard - StudioLex Admin';
             <div class="sidebar-footer">
                 <a href="../index.php" class="nav-link" target="_blank">
                     <span class="nav-icon">🌐</span>
-                    Vai al sito
+                    <span>Vai al sito</span>
                 </a>
                 <a href="logout.php" class="nav-link" style="color: #f56565;">
                     <span class="nav-icon">🚪</span>
-                    Logout
+                    <span>Logout</span>
                 </a>
             </div>
         </aside>
@@ -438,8 +651,18 @@ $page_title = 'Dashboard - StudioLex Admin';
             <!-- Messaggio di benvenuto -->
             <div class="welcome-message">
                 <h2>👋 Bentornato, <?php echo htmlspecialchars(explode(' ', $_SESSION['full_name'])[0]); ?>!</h2>
-                <p>Ecco un riepilogo del tuo sito. Puoi gestire articoli e contenuti dal menu laterale.</p>
+                <p>Ecco un riepilogo del tuo studio. Puoi gestire articoli e contenuti dal menu laterale.</p>
             </div>
+            
+            <!-- BOX PASSKEY (VISIBILE SOLO PER ADMIN) -->
+            <?php if ($_SESSION['role'] === 'admin' && $studio_passkey): ?>
+            <div class="passkey-box">
+                <h3>🔑 Passkey del tuo Studio</h3>
+                <p>Comunica questa Passkey ai tuoi dipendenti per permettergli di registrarsi e accedere al sistema.</p>
+                <div class="passkey-display"><?php echo htmlspecialchars($studio_passkey); ?></div>
+                <p class="passkey-note">⚠️ Conservala in un luogo sicuro. Ogni dipendente dovrà inserirla durante la registrazione.</p>
+            </div>
+            <?php endif; ?>
             
             <!-- Statistiche -->
             <div class="stats-grid">
@@ -554,5 +777,48 @@ $page_title = 'Dashboard - StudioLex Admin';
             <?php endif; ?>
         </main>
     </div>
+    
+    <!-- Script per Menu Mobile -->
+    <script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const toggle = document.getElementById('mobileMenuToggle');
+        const sidebar = document.getElementById('adminSidebar');
+        const overlay = document.getElementById('sidebarOverlay');
+        
+        if (toggle && sidebar && overlay) {
+            toggle.addEventListener('click', function() {
+                sidebar.classList.toggle('mobile-open');
+                overlay.classList.toggle('active');
+                this.textContent = sidebar.classList.contains('mobile-open') ? '✕' : '☰';
+            });
+            
+            overlay.addEventListener('click', function() {
+                sidebar.classList.remove('mobile-open');
+                overlay.classList.remove('active');
+                toggle.textContent = '☰';
+            });
+            
+            // Chiudi sidebar se si clicca su un link
+            sidebar.querySelectorAll('.nav-link').forEach(link => {
+                link.addEventListener('click', function() {
+                    if (window.innerWidth <= 768) {
+                        sidebar.classList.remove('mobile-open');
+                        overlay.classList.remove('active');
+                        toggle.textContent = '☰';
+                    }
+                });
+            });
+            
+            // Gestisci resize
+            window.addEventListener('resize', function() {
+                if (window.innerWidth > 768) {
+                    sidebar.classList.remove('mobile-open');
+                    overlay.classList.remove('active');
+                    toggle.textContent = '☰';
+                }
+            });
+        }
+    });
+    </script>
 </body>
 </html>
