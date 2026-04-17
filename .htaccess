@@ -1,0 +1,11 @@
+# Impedisci la visualizzazione delle directory
+Options -Indexes
+
+# Proteggi la cartella includes
+<Files "config.php">
+    Order Allow,Deny
+    Deny from all
+</Files>
+
+# Pagine di errore personalizzate
+ErrorDocument 404 /404.html
